@@ -47,7 +47,7 @@ async def application(scope, receive, send):
         await send(
             {
                 "type": "http.response.body",
-                "body": b"WebSocket server is running!".encode(),
+                "body": b"WebSocket server is running!",
             }
         )
 
