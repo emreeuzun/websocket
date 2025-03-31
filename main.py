@@ -8,45 +8,38 @@ sensor_data = {}
 
 async def application(scope, receive, send):
     if scope['type'] == 'websocket':
-        websocket = websockets.WebSocketCommonProtocol(scope, receive, send)
-        connected_clients.add(websocket)
-        print(f"Yeni WebSocket bağlantısı: {websocket.remote_address}") # Bağlantı logu
+        await send({"type": "websocket.accept"})
         try:
-            async for message in websocket:
-                print(f"Alınan mesaj: {message}") # Alınan mesajın logu
-                try:
-                    request = json.loads(message)
-                    print(f"JSON olarak çözülen mesaj: {request}") # Çözülen JSON'ın logu
-                    panel_id = request.get("panel_id")
-                    print(f"Alınan panel_id: {panel_id}") # Alınan panel_id'nin logu
+            while True:
+                message = await receive()
+                if message['type'] == 'websocket.receive':
+                    try:
+                        request = json.loads(message['bytes'].decode())
+                        panel_id = request.get("panel_id")
 
-                    if panel_id:
-                        sensor_data[panel_id] = {
-                            "sicaklik": request["sicaklik"],
-                            "nem": request["nem"],
-                            "voltaj": request["voltaj"],
-                            "akim": request["akim"],
-                        }
-                        print(f"Güncellenen sensor_data: {sensor_data}") # Güncellenen verinin logu
+                        if panel_id:
+                            sensor_data[panel_id] = {
+                                "sicaklik": request["sicaklik"],
+                                "nem": request["nem"],
+                                "voltaj": request["voltaj"],
+                                "akim": request["akim"],
+                            }
 
-                    if panel_id in sensor_data:
-                        response = json.dumps(sensor_data[panel_id])
-                        print(f"Gönderilen yanıt: {response}") # Gönderilen yanıtın logu
-                        await websocket.send(response)
-                    else:
-                        response = json.dumps({"error": "Geçersiz panel ID!"})
-                        print(f"Hata yanıtı gönderildi: {response}") # Hata yanıtının logu
-                        await websocket.send(response)
-                except json.JSONDecodeError as e:
-                    print(f"JSON çözme hatası: {e}") # JSON çözme hatasının logu
-                    response = json.dumps({"error": "Geçersiz JSON formatı!"})
-                    await websocket.send(response)
-        except websockets.exceptions.ConnectionClosed:
-            print(f"WebSocket bağlantısı kapandı: {websocket.remote_address}") # Bağlantı kapanma logu
+                        if panel_id in sensor_data:
+                            response = json.dumps(sensor_data[panel_id])
+                            await send({"type": "websocket.send", "bytes": response.encode()})
+                        else:
+                            response = json.dumps({"error": "Geçersiz panel ID!"})
+                            await send({"type": "websocket.send", "bytes": response.encode()})
+                    except json.JSONDecodeError as e:
+                        response = json.dumps({"error": "Geçersiz JSON formatı!"})
+                        await send({"type": "websocket.send", "bytes": response.encode()})
+                elif message['type'] == 'websocket.disconnect':
+                    break
+        except websockets.exceptions.ConnectionClosedError:
             pass
         finally:
-            connected_clients.remove(websocket)
-            print(f"WebSocket bağlantısı istemcilerden kaldırıldı: {websocket.remote_address}") # İstemci kaldırma logu
+            connected_clients.discard(scope['asgi']['websocket']) # İstemciyi scope üzerinden kaldır
     elif scope['type'] == 'http':
         await send(
             {
