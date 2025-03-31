@@ -3,71 +3,47 @@ import websockets
 import json
 import os
 
-connected_clients = set()
-sensor_data = {}
+# Panel verilerini saklamak için bir sözlük (dict)
+panel_data = {}
 
-async def application(scope, receive, send):
-    if scope['type'] == 'websocket':
-        websocket = websockets.WebSocketCommonProtocol(scope, receive, send)
-        connected_clients.add(websocket)
-        print(f"Yeni WebSocket bağlantısı: {websocket.remote_address}") # Bağlantı logu
-        try:
-            async for message in websocket:
-                print(f"Alınan mesaj: {message}") # Alınan mesajın logu
-                try:
-                    request = json.loads(message)
-                    print(f"JSON olarak çözülen mesaj: {request}") # Çözülen JSON'ın logu
-                    panel_id = request.get("panel_id")
-                    print(f"Alınan panel_id: {panel_id}") # Alınan panel_id'nin logu
 
-                    if panel_id:
-                        sensor_data[panel_id] = {
-                            "sicaklik": request["sicaklik"],
-                            "nem": request["nem"],
-                            "voltaj": request["voltaj"],
-                            "akim": request["akim"],
-                        }
-                        print(f"Güncellenen sensor_data: {sensor_data}") # Güncellenen verinin logu
+async def handle_connection(websocket, path):
+    try:
+        async for message in websocket:
+            data = json.loads(message)
 
-                    if panel_id in sensor_data:
-                        response = json.dumps(sensor_data[panel_id])
-                        print(f"Gönderilen yanıt: {response}") # Gönderilen yanıtın logu
-                        await websocket.send(response)
-                    else:
-                        response = json.dumps({"error": "Geçersiz panel ID!"})
-                        print(f"Hata yanıtı gönderildi: {response}") # Hata yanıtının logu
-                        await websocket.send(response)
-                except json.JSONDecodeError as e:
-                    print(f"JSON çözme hatası: {e}") # JSON çözme hatasının logu
-                    response = json.dumps({"error": "Geçersiz JSON formatı!"})
-                    await websocket.send(response)
-        except websockets.exceptions.ConnectionClosed:
-            print(f"WebSocket bağlantısı kapandı: {websocket.remote_address}") # Bağlantı kapanma logu
-            pass
-        finally:
-            connected_clients.remove(websocket)
-            print(f"WebSocket bağlantısı istemcilerden kaldırıldı: {websocket.remote_address}") # İstemci kaldırma logu
-    elif scope['type'] == 'http':
-        await send(
-            {
-                "type": "http.response.start",
-                "status": 200,
-                "headers": [
-                    [b"content-type", b"text/plain"],
-                ],
-            }
-        )
-        await send(
-            {
-                "type": "http.response.body",
-                "body": b"WebSocket server is running!",
-            }
-        )
+            # ESP32'den gelen veri mi, yoksa istemciden gelen sorgu mu kontrol et
+            if "panel_id" in data and "sicaklik" in data:
+                # ESP32 veri gönderiyor, kaydet
+                panel_id = data["panel_id"]
+                panel_data[panel_id] = {
+                    "sicaklik": data["sicaklik"],
+                    "nem": data["nem"],
+                    "voltaj": data["voltaj"],
+                    "akim": data["akim"]
+                }
+                print(f"📥 Veri alındı: {panel_id} -> {panel_data[panel_id]}")
 
-async def main():
-    port = int(os.environ.get("PORT", 8765))
-    async with websockets.serve(application, "", port):
-        await asyncio.Future()
+            elif "panel_id" in data:
+                # Mobil uygulama veri istiyor
+                panel_id = data["panel_id"]
+                if panel_id in panel_data:
+                    await websocket.send(json.dumps(panel_data[panel_id]))
+                    print(f"📤 Veri gönderildi: {panel_id} -> {panel_data[panel_id]}")
+                else:
+                    await websocket.send(json.dumps({"error": "Geçersiz panel ID!"}))
+                    print(f"⚠️ Hata: Geçersiz panel ID - {panel_id}")
+
+    except websockets.exceptions.ConnectionClosed:
+        print("🔌 Bağlantı kesildi.")
+
+
+async def start_server():
+    port = int(os.environ.get("PORT", 8765))  # Bulut ortamında portu dinamik al
+    server = await websockets.serve(handle_connection, "0.0.0.0", port)
+    print(f"🚀 WebSocket sunucusu {port} portunda çalışıyor!")
+    await server.wait_closed()
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(start_server())
