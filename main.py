@@ -34,6 +34,22 @@ async def application(scope, receive, send):
             pass
         finally:
             connected_clients.remove(websocket)
+    elif scope['type'] == 'http':
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    [b"content-type", b"text/plain"],
+                ],
+            }
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": b"WebSocket server is running!".encode(),
+            }
+        )
 
 async def main():
     port = int(os.environ.get("PORT", 8765))  # Heroku'dan gelen PORT'u kullan veya varsayılanı al
