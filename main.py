@@ -59,6 +59,7 @@ async def application(scope, receive, send):
 
 async def main():
     port = int(os.environ.get("PORT", 8765))
+    print(f"Uygulama portu: {port}")  # Bu satırı ekledik
     async with websockets.serve(application, "", port):
         await asyncio.Future()
 
