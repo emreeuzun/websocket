@@ -1,2 +1,4 @@
-websockets
-uvicorn
+flask
+flask-socketio
+eventlet
+gunicorn
